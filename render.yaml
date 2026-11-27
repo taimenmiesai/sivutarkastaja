@@ -1,0 +1,13 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: sivutarkastaja
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # Ilmaisessa palvelussa muistia on 512 Mt, joten yksi tarkastus kerrallaan.
+      - key: MAX_CONCURRENT
+        value: "1"

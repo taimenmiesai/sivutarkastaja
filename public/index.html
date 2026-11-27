@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sivutarkastaja</title>
+  <meta name="description" content="Tarkasta verkkosivun kontrastit, toimivuus värisokeille ja tekstin selkolukuisuus.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Värisokeussimulaatioiden suodattimet (Machado ym. 2009) -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <filter id="sim-protanopia" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="0.152286 1.052583 -0.204868 0 0  0.114503 0.786281 0.099216 0 0  -0.003882 -0.048116 1.051998 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="sim-deuteranopia" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="0.367322 0.860646 -0.227968 0 0  0.280085 0.672501 0.047413 0 0  -0.01182 0.04294 0.968881 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="sim-tritanopia" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="1.255528 -0.076749 -0.178779 0 0  -0.078411 0.930809 0.147602 0 0  0.004733 0.691367 0.3039 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="sim-achromatopsia" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"/>
+    </filter>
+  </svg>
+
+  <a class="skip" href="#main">Siirry sisältöön</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <h1>Sivutarkastaja</h1>
+      <p class="lead">Tarkasta, ovatko verkkosivun värit riittävän kontrastisia, miltä sivu näyttää värisokealle ja kuinka helppoa sen tekstiä on lukea.</p>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <form id="check-form" class="check-form" novalidate>
+      <label for="url">Sivun osoite</label>
+      <div class="row">
+        <input id="url" name="url" type="url" inputmode="url" autocomplete="url" required
+               placeholder="esim. https://www.esimerkki.fi" aria-describedby="url-error">
+        <button type="submit" id="submit">Tarkasta sivu</button>
+      </div>
+      <p id="url-error" class="error" role="alert" hidden></p>
+      <p class="hint" id="examples">Kirjoita osoite muodossa <span class="nowrap">esimerkki.fi</span> tai <span class="nowrap">https://esimerkki.fi/sivu</span>. Kokeile esimerkiksi:
+        <button type="button" class="chip" data-url="https://www.suomi.fi/">suomi.fi</button>
+        <button type="button" class="chip" data-url="https://yle.fi/">yle.fi</button>
+        <button type="button" class="chip" data-url="https://www.w3.org/WAI/">w3.org/WAI</button>
+      </p>
+    </form>
+
+    <div id="status" class="status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Haetaan ja tarkastetaan sivua. Tämä kestää yleensä 5–20 sekuntia.</span>
+    </div>
+
+    <div id="report" hidden>
+      <section class="summary" aria-labelledby="summary-title">
+        <div class="summary-head">
+          <div>
+            <h2 id="summary-title">Yhteenveto</h2>
+            <p class="meta" id="report-meta"></p>
+          </div>
+          <div class="toolbar">
+            <button type="button" class="secondary" id="copy-link">Kopioi raportin linkki</button>
+            <button type="button" class="secondary" id="print-report">Tulosta tai tallenna PDF</button>
+            <button type="button" class="secondary" id="download-json">Lataa tulokset (JSON)</button>
+            <span class="toolbar-msg" id="toolbar-msg" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="score" id="score"></div>
+        <div class="cards" id="summary-cards"></div>
+      </section>
+
+      <nav class="tabs" role="tablist" aria-label="Raportin osiot">
+        <button role="tab" id="tab-contrast" aria-controls="panel-contrast" aria-selected="true">Kontrastit</button>
+        <button role="tab" id="tab-colorblind" aria-controls="panel-colorblind" aria-selected="false" tabindex="-1">Värisokeus</button>
+        <button role="tab" id="tab-readability" aria-controls="panel-readability" aria-selected="false" tabindex="-1">Selkolukuisuus</button>
+      </nav>
+
+      <section role="tabpanel" id="panel-contrast" aria-labelledby="tab-contrast" class="panel"></section>
+      <section role="tabpanel" id="panel-colorblind" aria-labelledby="tab-colorblind" class="panel" hidden></section>
+      <section role="tabpanel" id="panel-readability" aria-labelledby="tab-readability" class="panel" hidden></section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Automaattinen tarkastus löytää yleisimmät ongelmat, mutta ei korvaa ihmisen tekemää arviota. Kontrastit arvioidaan WCAG 2.2 -ohjeiston kohtien 1.4.3 ja 1.4.6 mukaan.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
