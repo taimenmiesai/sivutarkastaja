@@ -22,14 +22,9 @@
 
   input.addEventListener('input', () => { if (!errorEl.hidden) showError(''); });
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const url = input.value.trim();
-    if (!url) {
-      showError('Kirjoita tarkastettavan sivun osoite.');
-      input.focus();
-      return;
-    }
+  let lastReport = null;
+
+  async function runCheck(url) {
     showError('');
     submit.disabled = true;
     statusEl.hidden = false;
@@ -42,13 +37,73 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Tarkastus epäonnistui. Yritä uudelleen.');
+      // Jaettava linkki: ?url=... avaa saman tarkastuksen uudelleen.
+      const share = new URL(location.href);
+      share.searchParams.set('url', url);
+      history.replaceState(null, '', share);
+      lastReport = data;
       render(data);
     } catch (err) {
       showError(err.message === 'Failed to fetch' ? 'Palvelimeen ei saatu yhteyttä. Tarkista verkkoyhteys ja yritä uudelleen.' : err.message);
+      input.focus();
     } finally {
       submit.disabled = false;
       statusEl.hidden = true;
     }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const url = input.value.trim();
+    if (!url) {
+      showError('Kirjoita tarkastettavan sivun osoite.');
+      input.focus();
+      return;
+    }
+    runCheck(url);
+  });
+
+  for (const chip of document.querySelectorAll('.chip[data-url]')) {
+    chip.addEventListener('click', () => {
+      input.value = chip.dataset.url;
+      runCheck(chip.dataset.url);
+    });
+  }
+
+  const initial = new URLSearchParams(location.search).get('url');
+  if (initial) {
+    input.value = initial;
+    runCheck(initial);
+  }
+
+  // --- Työkalupalkki ---
+  const toolbarMsg = document.getElementById('toolbar-msg');
+  function flash(msg) {
+    toolbarMsg.textContent = msg;
+    clearTimeout(flash.t);
+    flash.t = setTimeout(() => { toolbarMsg.textContent = ''; }, 4000);
+  }
+  document.getElementById('copy-link').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      flash('Linkki kopioitu.');
+    } catch {
+      flash('Kopioi linkki selaimen osoiteriviltä.');
+    }
+  });
+  document.getElementById('print-report').addEventListener('click', () => window.print());
+  document.getElementById('download-json').addEventListener('click', () => {
+    if (!lastReport) return;
+    const { screenshot, ...data } = lastReport;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    const host = (() => { try { return new URL(data.url).hostname; } catch { return 'sivu'; } })();
+    a.href = URL.createObjectURL(blob);
+    a.download = `saavutettavuus-${host}-${data.checkedAt.slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
   // --- Välilehdet (nuolinäppäintuki) ---
@@ -107,8 +162,9 @@
       cards.push(card('Selkolukuisuus (LIX)', fmt(rd.lix, 0), badge(lvl, rd.lixLevel)));
     }
     document.getElementById('summary-cards').innerHTML = cards.join('');
+    renderScore(r.overall);
 
-    renderContrast(c);
+    renderContrast(c, r);
     renderColorBlind(r);
     renderReadability(rd);
 
@@ -116,6 +172,20 @@
     reportEl.hidden = false;
     document.getElementById('summary-title').setAttribute('tabindex', '-1');
     document.getElementById('summary-title').focus();
+  }
+
+  function renderScore(o) {
+    const color = o.score >= 75 ? 'var(--ok)' : o.score >= 50 ? 'var(--warn)' : 'var(--bad)';
+    document.getElementById('score').innerHTML = `
+      <div class="score-ring" style="--p:${o.score};--c:${color}" role="img" aria-label="Kokonaisarvosana ${o.score} / 100, ${esc(o.grade)}">
+        <div><div><strong>${o.score}</strong><span>/ 100</span></div></div>
+      </div>
+      <div>
+        <h3>Kokonaisarvosana: ${esc(o.grade)}</h3>
+        <ul class="score-parts">${o.parts.map((p) => `
+          <li><span>${esc(p.label)}</span><span class="bar" aria-hidden="true"><i style="width:${Math.round(p.score * 100)}%"></i></span><span class="pts">${p.points} / ${p.weight}</span></li>`).join('')}
+        </ul>
+      </div>`;
   }
 
   function card(label, value, note) {
@@ -127,7 +197,9 @@
   }
 
   // --- Kontrastit ---
-  function renderContrast(c) {
+  function renderContrast(c, r) {
+    let n = 0;
+    for (const p of c.pairs) p.num = p.passAA ? null : ++n;
     const panel = document.getElementById('panel-contrast');
     panel.innerHTML = `
       <h2>Tekstien kontrastit</h2>
@@ -136,7 +208,8 @@
         <label><input type="checkbox" id="only-failing" checked> Näytä vain AA-tason alittavat</label>
         <span class="meta" style="margin:0">Tarkastettu ${c.totalElements} tekstielementtiä, ${c.pairs.length} väriparia.</span>
       </div>
-      <div id="contrast-table"></div>`;
+      <div id="contrast-table"></div>
+      ${renderOverlay(c, r)}`;
     const draw = () => {
       const only = document.getElementById('only-failing').checked;
       const rows = c.pairs.filter((p) => !only || !p.passAA);
@@ -154,13 +227,43 @@
   function contrastRow(p) {
     const level = p.passAAA ? badge('ok', 'AAA') : p.passAA ? badge('ok', 'AA') : badge('bad', 'Hylätty');
     const s = p.samples[0];
-    return `<tr>
-      <td>${swatch(p.fg, p.bg)}<span class="hexes">${esc(p.fg)} / ${esc(p.bg)}</span></td>
+    let fix = '';
+    if (!p.passAA) {
+      fix = p.suggestion
+        ? `<span class="fix">Ehdotus: ${swatch(p.suggestion, p.bg)} <span class="hexes" style="display:inline">${esc(p.suggestion)} (${fmt(p.suggestionRatio)}:1)</span></span>`
+        : '<span class="fix meta">Pelkkä tekstivärin säätö ei riitä. Vaihda myös taustaväriä.</span>';
+    }
+    return `<tr id="pair-${p.num || ''}">
+      <td>${p.num ? `<span class="num" aria-label="Kohta ${p.num}">${p.num}</span>` : ''}${swatch(p.fg, p.bg)}<span class="hexes">${esc(p.fg)} / ${esc(p.bg)}</span>${fix}</td>
       <td><strong>${fmt(p.ratio)}:1</strong><br><span class="meta">vaatimus ${fmt(p.required, 1)}:1${p.large ? ', suuri teksti' : ''}</span></td>
       <td>${level}${p.bgImage ? '<br><span class="meta">Taustakuva, tarkista käsin</span>' : ''}</td>
       <td>${p.count}</td>
       <td>${s ? `<span class="sample-text">”${esc(s.text)}”</span><code>${esc(s.selector)}</code>` : ''}</td>
     </tr>`;
+  }
+
+  // Kuvakaappaus, johon AA-tason alittavat tekstit on merkitty numeroin.
+  function renderOverlay(c, r) {
+    const failing = c.pairs.filter((p) => p.num && p.rects && p.rects.length);
+    if (!failing.length || !r.screenshotSize) return '';
+    const W = r.screenshotSize.width;
+    const H = r.screenshotSize.height;
+    const boxes = [];
+    let hidden = 0;
+    for (const p of failing) {
+      for (const [x, y, w, h] of p.rects) {
+        if (y >= H || x >= W) { hidden++; continue; }
+        const style = `left:${(100 * x) / W}%;top:${(100 * y) / H}%;width:${(100 * Math.min(w, W - x)) / W}%;height:${(100 * Math.min(h, H - y)) / H}%`;
+        boxes.push(`<span class="box" style="${style}"><b>${p.num}</b></span>`);
+      }
+    }
+    return `<div class="overlay-wrap">
+      <h3>Ongelmakohdat sivulla</h3>
+      <p>Punaisella merkityt tekstit eivät läpäise AA-tasoa. Numero viittaa yllä olevan taulukon riviin.${hidden ? ` ${hidden} kohtaa on kuvakaappauksen alapuolella, eikä niitä näytetä kuvassa.` : ''}</p>
+      <div class="overlay-shot" tabindex="0" aria-label="Kuvakaappaus sivusta, ongelmakohdat merkitty. Vieritettävä.">
+        <div class="overlay-inner"><img src="${r.screenshot}" alt="">${boxes.join('')}</div>
+      </div>
+    </div>`;
   }
 
   // --- Värisokeus ---

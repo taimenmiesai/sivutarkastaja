@@ -42,6 +42,11 @@
         <button type="submit" id="submit">Tarkasta sivu</button>
       </div>
       <p id="url-error" class="error" role="alert" hidden></p>
+      <p class="hint" id="examples">Kirjoita osoite muodossa <span class="nowrap">esimerkki.fi</span> tai <span class="nowrap">https://esimerkki.fi/sivu</span>. Kokeile esimerkiksi:
+        <button type="button" class="chip" data-url="https://www.suomi.fi/">suomi.fi</button>
+        <button type="button" class="chip" data-url="https://yle.fi/">yle.fi</button>
+        <button type="button" class="chip" data-url="https://www.w3.org/WAI/">w3.org/WAI</button>
+      </p>
     </form>
 
     <div id="status" class="status" role="status" aria-live="polite" hidden>
@@ -51,8 +56,19 @@
 
     <div id="report" hidden>
       <section class="summary" aria-labelledby="summary-title">
-        <h2 id="summary-title">Yhteenveto</h2>
-        <p class="meta" id="report-meta"></p>
+        <div class="summary-head">
+          <div>
+            <h2 id="summary-title">Yhteenveto</h2>
+            <p class="meta" id="report-meta"></p>
+          </div>
+          <div class="toolbar">
+            <button type="button" class="secondary" id="copy-link">Kopioi raportin linkki</button>
+            <button type="button" class="secondary" id="print-report">Tulosta tai tallenna PDF</button>
+            <button type="button" class="secondary" id="download-json">Lataa tulokset (JSON)</button>
+            <span class="toolbar-msg" id="toolbar-msg" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="score" id="score"></div>
         <div class="cards" id="summary-cards"></div>
       </section>
 

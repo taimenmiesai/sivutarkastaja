@@ -29,6 +29,12 @@ test('analysoi testisivun', async (t) => {
   const find = (fg, bg) => r.contrast.pairs.find((p) => p.fg === fg && p.bg === bg);
   const faint = find('#aaaaaa', '#ffffff');
   assert.ok(faint && !faint.passAA, 'haalea teksti hylätään');
+  assert.match(faint.suggestion, /^#[0-9a-f]{6}$/);
+  assert.ok(faint.suggestionRatio >= 4.5);
+  assert.equal(faint.rects.length, 1);
+  assert.ok(r.overall.score > 0 && r.overall.score < 100);
+  assert.equal(r.overall.parts.length, 4);
+  assert.equal(r.screenshotSize.width, 1280);
   const big = find('#888888', '#ffffff');
   assert.ok(big && big.large && big.passAA, 'suuri teksti läpäisee 3:1');
   assert.ok(find('#ffffff', '#000000').passAAA, 'valkoinen mustalla');

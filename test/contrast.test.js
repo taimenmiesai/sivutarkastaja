@@ -33,3 +33,13 @@ test('simulaatio säilyttää harmaan ja muuttaa punaisen', () => {
   assert.equal(red[0], red[1]);
   assert.equal(red[1], red[2]);
 });
+
+test('korjausehdotus läpäisee vaatimuksen ja on lähellä alkuperäistä', () => {
+  const { suggestColor } = require('../lib/contrast');
+  const fix = suggestColor([0xaa, 0xaa, 0xaa], [255, 255, 255], 4.5);
+  assert.ok(contrastRatio(fix, [255, 255, 255]) >= 4.5);
+  assert.ok(fix[0] > 0x60, 'ei tummenna turhan paljon: ' + fix);
+  assert.equal(suggestColor([0, 0, 0], [255, 255, 255], 4.5), null);
+  const light = suggestColor([0x40, 0x40, 0x40], [0, 0, 0], 4.5);
+  assert.ok(light[0] > 0x40, 'tummalla taustalla vaalennetaan');
+});
