@@ -35,6 +35,10 @@
         body: JSON.stringify({ url }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && data.loginRequired) {
+        requireLogin(() => { showView('check'); runCheck(url); });
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Tarkastus epäonnistui. Yritä uudelleen.');
       setShareUrl(data, url);
       render(data);
@@ -99,14 +103,90 @@
 
   // --- Näkymät: tarkastus ja arkisto ---
   const archiveEl = document.getElementById('archive');
+  const loginEl = document.getElementById('login');
   const checkViewEl = document.getElementById('check-view');
   function showView(name) {
     const archive = name === 'archive';
+    loginEl.hidden = name !== 'login';
     archiveEl.hidden = !archive;
-    checkViewEl.hidden = archive;
+    checkViewEl.hidden = name !== 'check';
     document.getElementById('nav-archive').removeAttribute('aria-current');
     document.getElementById('nav-check').removeAttribute('aria-current');
     document.getElementById(archive ? 'nav-archive' : 'nav-check').setAttribute('aria-current', 'page');
+  }
+
+  // --- Salasanasuojaus ---
+  const loginForm = document.getElementById('login-form');
+  const passwordInput = document.getElementById('password');
+  const loginError = document.getElementById('login-error');
+  const loginSubmit = document.getElementById('login-submit');
+  const logoutBtn = document.getElementById('logout');
+  let afterLogin = null;
+
+  function setLoginError(msg) {
+    loginError.textContent = msg;
+    loginError.hidden = !msg;
+    passwordInput.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  }
+
+  function requireLogin(retry) {
+    afterLogin = retry || null;
+    logoutBtn.hidden = true;
+    showView('login');
+    setLoginError('');
+    passwordInput.value = '';
+    passwordInput.focus();
+  }
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!passwordInput.value) {
+      setLoginError('Kirjoita salasana.');
+      passwordInput.focus();
+      return;
+    }
+    loginSubmit.disabled = true;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput.value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Kirjautuminen epäonnistui. Yritä uudelleen.');
+      passwordInput.value = '';
+      logoutBtn.hidden = false;
+      const next = afterLogin || route;
+      afterLogin = null;
+      next();
+    } catch (err) {
+      setLoginError(err.message === 'Failed to fetch' ? 'Palvelimeen ei saatu yhteyttä. Yritä uudelleen.' : err.message);
+      passwordInput.select();
+    } finally {
+      loginSubmit.disabled = false;
+    }
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    history.pushState(null, '', location.pathname);
+    reportEl.hidden = true;
+    input.value = '';
+    requireLogin(() => { showView('check'); input.focus(); });
+  });
+
+  async function start() {
+    let session = { required: false, ok: true };
+    try {
+      session = await (await fetch('/api/session')).json();
+    } catch {
+      /* jatketaan; palvelin kysyy salasanaa tarvittaessa */
+    }
+    logoutBtn.hidden = !(session.required && session.ok);
+    // Jaettu raporttilinkki (?id=) aukeaa ilman salasanaa.
+    const sharedReport = new URLSearchParams(location.search).get('id') && location.hash !== '#arkisto';
+    if (session.required && !session.ok && !sharedReport) requireLogin(route);
+    else route();
   }
 
   function route() {
@@ -148,7 +228,12 @@
     archiveStatus.textContent = 'Haetaan arkistoa.';
     try {
       const res = await fetch('/api/checks?q=' + encodeURIComponent(q.trim()));
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && data.loginRequired) {
+        archiveStatus.textContent = '';
+        requireLogin(() => { showView('archive'); loadArchive(q); });
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Arkistoa ei saatu haettua.');
       if (data.enabled === false) {
         archiveStatus.textContent = '';
@@ -192,7 +277,7 @@
     loadArchived(a.dataset.id);
   });
 
-  route();
+  start();
 
   // --- Työkalupalkki ---
   const toolbarMsg = document.getElementById('toolbar-msg');

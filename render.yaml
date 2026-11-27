@@ -15,3 +15,7 @@ services:
       # asetuksissa, eikä sitä tallenneta repoon.
       - key: DATABASE_URL
         sync: false
+      # Salasana tarkastusten käyttöön. Arvo syötetään Renderin asetuksissa.
+      # Jos muuttujaa ei ole, sivusto on kaikille avoin.
+      - key: CHECK_PASSWORD
+        sync: false
