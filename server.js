@@ -9,6 +9,9 @@ const { compareReports, normalizeUrl } = require('./lib/compare');
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 2;
+// Kun tarkastuksia on jo käynnissä, uusi pyyntö odottaa vuoroaan jonossa.
+const MAX_QUEUE = Number(process.env.MAX_QUEUE) || 6;
+const QUEUE_WAIT_MS = 90_000;
 // Vain paikalliseen kehitykseen: sallii esim. localhost-osoitteiden tarkastamisen.
 const ALLOW_PRIVATE = process.env.ALLOW_PRIVATE_URLS === '1';
 
@@ -35,6 +38,35 @@ function createApp(store = null, opts = {}) {
   app.use(express.static(path.join(__dirname, 'public')));
 
   let running = 0;
+  const queue = [];
+
+  /** Varaa tarkastuspaikan. Palauttaa false, jos jono on täynnä tai odotus venyy liian pitkäksi. */
+  function acquireSlot() {
+    if (running < MAX_CONCURRENT) {
+      running++;
+      return Promise.resolve(true);
+    }
+    if (queue.length >= MAX_QUEUE) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const waiter = { resolve, timer: null };
+      waiter.timer = setTimeout(() => {
+        const i = queue.indexOf(waiter);
+        if (i !== -1) queue.splice(i, 1);
+        resolve(false);
+      }, QUEUE_WAIT_MS);
+      queue.push(waiter);
+    });
+  }
+
+  function releaseSlot() {
+    const next = queue.shift();
+    if (next) {
+      clearTimeout(next.timer);
+      next.resolve(true); // paikka siirtyy suoraan jonossa seuraavalle
+    } else {
+      running--;
+    }
+  }
 
   app.post('/api/analyze', async (req, res) => {
     let url;
@@ -44,10 +76,9 @@ function createApp(store = null, opts = {}) {
       if (err instanceof UrlError) return res.status(400).json({ error: err.message });
       throw err;
     }
-    if (running >= MAX_CONCURRENT) {
+    if (!(await acquireSlot())) {
       return res.status(503).json({ error: 'Palvelu on juuri nyt kiireinen. Yritä hetken päästä uudelleen.' });
     }
-    running++;
     try {
       const report = await analyzeUrl(url, { allowPrivate });
       if (!store) return res.json(report);
@@ -61,10 +92,14 @@ function createApp(store = null, opts = {}) {
       }
     } catch (err) {
       if (err.userFacing) return res.status(422).json({ error: err.message });
+      if (err.name === 'TimeoutError') {
+        console.warn('Tarkastus aikakatkaistiin:', url.href, err.message.split('\n')[0]);
+        return res.status(422).json({ error: 'Sivu oli niin raskas, ettei tarkastus valmistunut ajoissa. Yritä hetken päästä uudelleen.' });
+      }
       console.error(err);
       res.status(500).json({ error: 'Tarkastus epäonnistui odottamattomasti. Yritä uudelleen.' });
     } finally {
-      running--;
+      releaseSlot();
     }
   });
 
