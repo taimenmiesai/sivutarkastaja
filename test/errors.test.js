@@ -98,3 +98,26 @@ test('tyhjästä sivusta ei anneta arvosanaa', async (t) => {
     return true;
   });
 });
+
+test('upotetut kehykset ja videot jätetään lataamatta', async (t) => {
+  const requested = [];
+  const server = http.createServer((req, res) => {
+    requested.push(req.url);
+    if (req.url === '/kehys') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end('<p>Mainos</p>');
+    }
+    if (req.url === '/video.mp4') {
+      res.writeHead(200, { 'Content-Type': 'video/mp4' });
+      return res.end('');
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><html lang="fi"><title>Kehykset</title><p>Pääsivun teksti on tässä kohdassa.</p><iframe src="/kehys"></iframe><video src="/video.mp4" autoplay muted></video>');
+  });
+  const port = await listen(server);
+  t.after(async () => { server.close(); await closeBrowser(); });
+  const r = await analyzeUrl(`http://127.0.0.1:${port}/`, { allowPrivate: true });
+  assert.equal(r.title, 'Kehykset');
+  assert.ok(!requested.includes('/kehys'), 'kehystä ei ladata');
+  assert.ok(!requested.includes('/video.mp4'), 'videota ei ladata');
+});
