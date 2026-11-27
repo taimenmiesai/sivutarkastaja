@@ -433,7 +433,7 @@
   // Kuvakaappaus, johon AA-tason alittavat tekstit on merkitty numeroin.
   function renderOverlay(c, r) {
     const failing = c.pairs.filter((p) => p.num && p.rects && p.rects.length);
-    if (!failing.length || !r.screenshotSize) return '';
+    if (!failing.length || !r.screenshot || !r.screenshotSize) return '';
     const W = r.screenshotSize.width;
     const H = r.screenshotSize.height;
     const boxes = [];
@@ -465,7 +465,9 @@
 
   function renderColorBlind(r) {
     const panel = document.getElementById('panel-colorblind');
-    const figures = SIMS.map(([key, label, filter]) => {
+    const figures = !r.screenshot
+      ? '<p class="meta">Sivusta ei saatu kuvakaappausta, joten simulaatiokuvia ei voida näyttää. Värisokeuden vaikutus väripareihin on arvioitu silti alla.</p>'
+      : SIMS.map(([key, label, filter]) => {
       const info = r.colorBlindness[key];
       const note = !info ? '' : info.affected.length === 0 ? badge('ok', 'Ei heikkeneviä pareja') : badge('warn', `${info.affected.length} paria heikkenee`);
       return `<figure>
