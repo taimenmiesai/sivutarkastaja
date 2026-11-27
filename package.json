@@ -1,0 +1,21 @@
+{
+  "name": "sivutarkastaja",
+  "version": "0.1.0",
+  "description": "Tarkastaa verkkosivun kontrastit, toimivuuden värisokeille ja tekstin selkolukuisuuden.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "ALLOW_PRIVATE_URLS=1 node server.js",
+    "test": "node --test test/*.test.js",
+    "postinstall": "playwright install chromium || echo 'Asenna selain käsin: npx playwright install chromium'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright": "1.63.0"
+  },
+  "license": "MIT"
+}
