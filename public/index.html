@@ -35,7 +35,7 @@
 
   <main id="main" class="wrap">
     <form id="check-form" class="check-form" novalidate>
-      <label for="url">Sivun osoite</label>
+      <label for="url">Lisää tähän tarkastettavan sivun osoite</label>
       <div class="row">
         <input id="url" name="url" type="url" inputmode="url" autocomplete="url" required
                placeholder="esim. https://www.esimerkki.fi" aria-describedby="url-error">
@@ -62,9 +62,8 @@
             <p class="meta" id="report-meta"></p>
           </div>
           <div class="toolbar">
-            <button type="button" class="secondary" id="copy-link">Kopioi raportin linkki</button>
+            <button type="button" class="secondary" id="copy-link">Jaa raportti linkillä</button>
             <button type="button" class="secondary" id="print-report">Tulosta tai tallenna PDF</button>
-            <button type="button" class="secondary" id="download-json">Lataa tulokset (JSON)</button>
             <span class="toolbar-msg" id="toolbar-msg" role="status" aria-live="polite"></span>
           </div>
         </div>

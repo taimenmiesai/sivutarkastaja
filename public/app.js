@@ -22,7 +22,6 @@
 
   input.addEventListener('input', () => { if (!errorEl.hidden) showError(''); });
 
-  let lastReport = null;
 
   async function runCheck(url) {
     showError('');
@@ -41,7 +40,6 @@
       const share = new URL(location.href);
       share.searchParams.set('url', url);
       history.replaceState(null, '', share);
-      lastReport = data;
       render(data);
     } catch (err) {
       showError(err.message === 'Failed to fetch' ? 'Palvelimeen ei saatu yhteyttä. Tarkista verkkoyhteys ja yritä uudelleen.' : err.message);
@@ -86,25 +84,12 @@
   document.getElementById('copy-link').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(location.href);
-      flash('Linkki kopioitu.');
+      flash('Linkki kopioitu. Liitä se viestiin, niin vastaanottaja näkee saman raportin.');
     } catch {
       flash('Kopioi linkki selaimen osoiteriviltä.');
     }
   });
   document.getElementById('print-report').addEventListener('click', () => window.print());
-  document.getElementById('download-json').addEventListener('click', () => {
-    if (!lastReport) return;
-    const { screenshot, ...data } = lastReport;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    const host = (() => { try { return new URL(data.url).hostname; } catch { return 'sivu'; } })();
-    a.href = URL.createObjectURL(blob);
-    a.download = `saavutettavuus-${host}-${data.checkedAt.slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
 
   // --- Välilehdet (nuolinäppäintuki) ---
   const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -127,6 +112,17 @@
       if (next) { e.preventDefault(); selectTab(next); next.focus(); }
     });
   });
+
+  // Lisätietoa-osio: mitä havaittiin, miksi se kannattaa korjata ja mihin ohjeeseen se perustuu.
+  function more(found, why, ref) {
+    return `<details class="more"><summary>Lisätietoa ja perustelut</summary>
+      <p><strong>Mitä havaittiin:</strong> ${found}</p>
+      <p><strong>Miksi tämä kannattaa korjata:</strong> ${why}</p>
+      ${ref ? `<p class="ref">Perustuu: ${ref}</p>` : ''}
+    </details>`;
+  }
+
+  const LAW = 'Laki digitaalisten palvelujen tarjoamisesta ja EU:n esteettömyyssäädös edellyttävät monilta palveluilta WCAG AA -tason täyttämistä.';
 
   function badge(kind, text) {
     return `<span class="badge ${kind}">${esc(text)}</span>`;
@@ -239,7 +235,16 @@
       <td>${level}${p.bgImage ? '<br><span class="meta">Taustakuva, tarkista käsin</span>' : ''}</td>
       <td>${p.count}</td>
       <td>${s ? `<span class="sample-text">”${esc(s.text)}”</span><code>${esc(s.selector)}</code>` : ''}</td>
-    </tr>`;
+    </tr>${p.passAA ? '' : `<tr class="detail-row"><td colspan="5">${contrastMore(p)}</td></tr>`}`;
+  }
+
+  function contrastMore(p) {
+    const kind = p.large ? 'suurelle tekstille' : 'tavalliselle tekstille';
+    const found = `Teksti värillä ${esc(p.fg)} taustalla ${esc(p.bg)} on kontrastiltaan ${fmt(p.ratio)}:1. Vaatimus ${kind} on vähintään ${fmt(p.required, 1)}:1, joten ero jää ${fmt(p.required - p.ratio)} yksikköä alle rajan. Sama väripari esiintyy sivulla ${p.count === 1 ? 'kerran' : p.count + ' kertaa'}.`
+      + (p.bgImage ? ' Tekstin takana on taustakuva tai liukuväri, joten todellinen kontrasti voi olla erilainen. Tarkista kohta myös silmämääräisesti.' : '')
+      + (p.suggestion ? ` Jos tekstiväriksi vaihdetaan ${esc(p.suggestion)}, kontrasti nousee tasolle ${fmt(p.suggestionRatio)}:1.` : ' Pelkkä tekstivärin vaihtaminen ei riitä, vaan myös taustaväriä on muutettava.');
+    const why = 'Kun tekstin ja taustan välillä on liian vähän eroa, heikkonäköisten, ikääntyneiden ja värisokeiden on vaikea tai mahdoton lukea tekstiä. Sama koskee kaikkia, jotka lukevat sivua puhelimella kirkkaassa auringonvalossa tai heikkolaatuisella näytöllä. Riittävä kontrasti on yksi helpoimmista ja halvimmista saavutettavuuskorjauksista. ' + LAW;
+    return more(found, why, 'WCAG 2.2, kohta 1.4.3 Kontrasti (minimi), taso AA');
   }
 
   // Kuvakaappaus, johon AA-tason alittavat tekstit on merkitty numeroin.
@@ -298,7 +303,7 @@
             <td>${badge('bad', `${fmt(a.simRatio)}:1`)}<br><span class="meta">vaatimus ${fmt(a.required, 1)}:1</span></td>
             <td>${a.count}</td>
             <td><span class="sample-text">${a.sample ? '”' + esc(a.sample) + '”' : ''}</span></td>
-          </tr>`).join('')}</tbody></table></div>`;
+          </tr><tr class="detail-row"><td colspan="5">${colorBlindMore(key, label, a)}</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
 
     const linkSection = r.links.length === 0 ? '' : `
@@ -310,7 +315,11 @@
           <td><span class="sample-text">”${esc(l.text)}”</span></td>
           <td><span class="dot" style="background:${esc(l.linkColor)}"></span><span class="hexes" style="display:inline">linkki ${esc(l.linkColor)}</span><br><span class="dot" style="background:${esc(l.textColor)}"></span><span class="hexes" style="display:inline">teksti ${esc(l.textColor)}</span><br>${badge('warn', `${fmt(l.ratio)}:1`)}</td>
           <td><code>${esc(l.selector)}</code></td>
-        </tr>`).join('')}</tbody></table></div>`;
+        </tr><tr class="detail-row"><td colspan="3">${more(
+          `Linkki ”${esc(l.text)}” on tekstin keskellä ilman alleviivausta, ja sen väri ${esc(l.linkColor)} eroaa ympäröivän tekstin väristä ${esc(l.textColor)} vain ${fmt(l.ratio)}:1. Ero on alle vaadittavan 3:1, eikä linkkiä erota muulla tavalla, kuten lihavoinnilla.`,
+          'Jos linkin tunnistaa vain väristä, värisokea, heikkonäköinen tai harmaasävynäyttöä käyttävä ei huomaa linkkiä lainkaan ja jää paitsi sen takana olevasta tiedosta. Helpoin korjaus on näyttää linkkien alleviivaus tekstin sisällä. ' + LAW,
+          'WCAG 2.2, kohta 1.4.1 Värien käyttö, taso A (tekniikka G183)'
+        )}</td></tr>`).join('')}</tbody></table></div>`;
 
     panel.innerHTML = `
       <h2>Miltä sivu näyttää värisokealle</h2>
@@ -318,6 +327,19 @@
       <div class="sim-grid">${figures}</div>
       ${lists || '<p class="empty" style="margin-top:20px">Yksikään väripari ei heikkene simulaatioissa vaatimuksen alle.</p>'}
       ${linkSection}`;
+  }
+
+  const CB_WHO = {
+    protanopia: 'Punasokeutta tai sen lievempää muotoa on noin 1 prosentilla miehistä. Puna-vihervärisokeutta on kaikkiaan noin 8 prosentilla miehistä ja 0,5 prosentilla naisista.',
+    deuteranopia: 'Vihersokeus ja sen lievemmät muodot ovat yleisin värinäön poikkeama. Puna-vihervärisokeutta on noin 8 prosentilla miehistä ja 0,5 prosentilla naisista.',
+    tritanopia: 'Sinisokeus on harvinainen, mutta sinisen ja keltaisen erottaminen heikkenee myös iän ja esimerkiksi harmaakaihin myötä.',
+    achromatopsia: 'Täysi värisokeus on harvinainen, mutta sama tilanne syntyy, kun sivu tulostetaan mustavalkoisena tai luetaan harmaasävyisellä näytöllä.',
+  };
+
+  function colorBlindMore(key, label, a) {
+    const found = `Värit ${esc(a.fg)} ja ${esc(a.bg)} erottuvat tavallisella näöllä riittävästi (${fmt(a.ratio)}:1). Kun värinäköä simuloidaan tyypillä ${esc(label.toLowerCase())}, värit näyttävät sävyiltä ${esc(a.simFg)} ja ${esc(a.simBg)}, ja kontrasti putoaa tasolle ${fmt(a.simRatio)}:1. Vaatimus on ${fmt(a.required, 1)}:1.`;
+    const why = `${CB_WHO[key] || ''} Näille lukijoille teksti sulautuu taustaan, vaikka se näyttää muille selvältä. Korjaa valitsemalla värit, joiden ero perustuu vaaleuteen eikä pelkkään sävyyn, esimerkiksi tumma teksti vaalealla taustalla.`;
+    return more(found, why, 'WCAG 2.2, kohdat 1.4.1 Värien käyttö ja 1.4.3 Kontrasti (minimi)');
   }
 
   // --- Selkolukuisuus ---
@@ -346,7 +368,7 @@
         LIX-luku lasketaan lauseiden keskipituudesta ja pitkien sanojen osuudesta. Alle 40 on helppoa, yli 50 vaikeaa luettavaa.</p>
       ${rd.note ? `<p class="meta">${esc(rd.note)}</p>` : ''}
       <div class="metrics">${metrics.join('')}</div>
-      ${rd.advice.length ? `<h3>Parannusehdotukset</h3><ul class="advice">${rd.advice.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '<h3>Parannusehdotukset</h3><p>Teksti on selkeää. Ei erityisiä huomioita.</p>'}
+      ${rd.advice.length ? `<h3>Parannusehdotukset</h3><ul class="advice">${rd.advice.map((a) => `<li>${esc(a.text)}${more(esc(a.found), esc(a.why), a.ref ? esc(a.ref) : '')}</li>`).join('')}</ul>` : '<h3>Parannusehdotukset</h3><p>Teksti on selkeää. Ei erityisiä huomioita.</p>'}
       ${rd.longestSentences.length ? `<h3>Pisimmät lauseet</h3><ol class="sentences">${rd.longestSentences.map((s) => `<li><strong>${s.words} sanaa:</strong> ${esc(s.text)}</li>`).join('')}</ol>` : ''}
       ${rd.veryLongWords.length ? `<h3>Hyvin pitkät sanat (vähintään ${rd.veryLongWordLimit} merkkiä)</h3><ul class="words">${rd.veryLongWords.map((w) => `<li>${esc(w.word)}${w.count > 1 ? ` (${w.count})` : ''}</li>`).join('')}</ul>` : ''}`;
   }
