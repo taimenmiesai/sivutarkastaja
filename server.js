@@ -13,7 +13,9 @@ const ALLOW_PRIVATE = process.env.ALLOW_PRIVATE_URLS === '1';
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '10kb' }));
+  app.get('/healthz', (req, res) => res.type('text').send('ok'));
   app.use(express.static(path.join(__dirname, 'public')));
 
   let running = 0;
@@ -46,7 +48,7 @@ function createApp() {
 }
 
 if (require.main === module) {
-  const server = createApp().listen(PORT, () => {
+  const server = createApp().listen(PORT, '0.0.0.0', () => {
     console.log(`Sivutarkastaja käynnissä: http://localhost:${PORT}`);
   });
   const shutdown = async () => {

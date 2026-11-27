@@ -23,6 +23,20 @@ Ympäristömuuttujat:
 | `MAX_CONCURRENT` | `2` | Samanaikaisten tarkastusten enimmäismäärä |
 | `ALLOW_PRIVATE_URLS` | – | `1` sallii localhost- ja sisäverkko-osoitteet. Vain kehitykseen (`npm run dev`). |
 
+## Julkaisu
+
+Repossa on `Dockerfile` (Playwrightin virallinen kuva, jossa Chromium on valmiina) ja `render.yaml` Renderin Blueprint-julkaisua varten.
+
+1. Kirjaudu osoitteessa https://dashboard.render.com GitHub-tunnuksilla.
+2. Valitse **New → Blueprint** ja valitse tämä repo.
+3. Render lukee `render.yaml`-tiedoston ja luo palvelun. Ensimmäinen julkaisu kestää noin 5–10 minuuttia.
+
+Sivusto saa osoitteen muotoa `https://sivutarkastaja-xxxx.onrender.com`. Jokainen päähaaraan tehty muutos julkaistaan automaattisesti.
+
+Ilmainen Render-palvelu nukahtaa 15 minuutin käyttämättömyyden jälkeen, joten ensimmäinen avaus sen jälkeen kestää noin minuutin. Maksullinen taso poistaa viiveen.
+
+Dockerfile toimii myös muissa konttipalveluissa (esim. Fly.io, Railway, Google Cloud Run). Palvelu kuuntelee `PORT`-ympäristömuuttujan porttia, ja terveystarkistus on osoitteessa `/healthz`.
+
 ## Tietoturva
 
 Palvelin hakee käyttäjän antamia osoitteita, joten se estää oletuksena kaikki pyynnöt yksityisiin verkkoihin (localhost, 10.x, 192.168.x, pilvipalveluiden metatieto-osoitteet jne.). Tarkistus tehdään jokaiselle selaimen pyynnölle, myös uudelleenohjauksille ja alaresursseille.
