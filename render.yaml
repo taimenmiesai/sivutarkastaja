@@ -11,3 +11,7 @@ services:
       # Ilmaisessa palvelussa muistia on 512 Mt, joten yksi tarkastus kerrallaan.
       - key: MAX_CONCURRENT
         value: "1"
+      # Tarkastusarkiston tietokanta (esim. Neon). Arvo syötetään Renderin
+      # asetuksissa, eikä sitä tallenneta repoon.
+      - key: DATABASE_URL
+        sync: false

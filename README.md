@@ -6,6 +6,22 @@ Verkkosivusto, joka arvioi toisen verkkosivun saavutettavuutta. Käyttäjä syö
 - **Värisokeus.** Kuvakaappaus sivusta neljällä simulaatiolla: puna-, viher- ja sinisokeus sekä täysi värisokeus (Machado ym. 2009). Lisäksi listataan väriparit, jotka läpäisevät vaatimuksen tavallisella näöllä mutta eivät värisokealle, sekä tekstin sisäiset linkit, jotka erottuvat vain värin avulla (WCAG 1.4.1).
 - **Selkolukuisuus.** LIX-luku, lauseiden ja sanojen keskipituus, pisimmät lauseet ja hyvin pitkät sanat sekä parannusehdotukset. Kieli (suomi tai englanti) tunnistetaan sivun `lang`-määreestä tai tekstistä. Englanninkieliselle tekstille lasketaan myös Flesch Reading Ease.
 
+## Tarkastusarkisto
+
+Jokainen tarkastus tallennetaan arkistoon. Saman sivun tarkastukset kootaan yhteen (osoitteesta poistetaan `www.`, protokolla, loppukauttaviiva ja `#`-osa), joten raportissa näkyy sivun historia ja muutos edelliseen tarkastukseen: arvosanan ja osa-alueiden muutos sekä korjatut ja uudet kontrastiongelmat. Arkistoa voi selata ja hakea osoitteella tai sivun nimellä. Raportin linkki (`?id=...`) avaa tallennetun raportin sellaisenaan.
+
+Tallennuspaikka valitaan ympäristömuuttujilla:
+
+- `DATABASE_URL` asetettu: PostgreSQL (esim. ilmainen [Neon](https://neon.tech)). Taulu luodaan automaattisesti.
+- Muuten: tiedostot hakemistoon `DATA_DIR` (oletus `./data`). Sopii kehitykseen. Renderin ilmaisessa palvelussa tiedostot katoavat jokaisessa julkaisussa.
+
+### Neon-tietokannan kytkeminen Renderiin
+
+1. Luo ilmainen tili osoitteessa https://neon.tech ja uusi projekti (alueeksi esim. *AWS Europe Central (Frankfurt)*).
+2. Kopioi projektin **Connection string** (alkaa `postgresql://`).
+3. Avaa Renderissä palvelu **sivutarkastaja → Environment** ja lisää muuttuja `DATABASE_URL`, jonka arvoksi liität kopioimasi osoitteen. Tallenna.
+4. Render julkaisee palvelun uudelleen. Lokissa lukee `Arkisto käytössä (postgres).`
+
 ## Käynnistys
 
 Vaatii Node.js 20 tai uudemman.
@@ -21,6 +37,8 @@ Ympäristömuuttujat:
 |---|---|---|
 | `PORT` | `3000` | Kuunneltava portti |
 | `MAX_CONCURRENT` | `2` | Samanaikaisten tarkastusten enimmäismäärä |
+| `DATABASE_URL` | – | PostgreSQL-tietokanta tarkastusarkistolle |
+| `DATA_DIR` | `./data` | Arkiston hakemisto, jos tietokantaa ei ole |
 | `ALLOW_PRIVATE_URLS` | – | `1` sallii localhost- ja sisäverkko-osoitteet. Vain kehitykseen (`npm run dev`). |
 
 ## Julkaisu
@@ -45,6 +63,8 @@ Palvelin hakee käyttäjän antamia osoitteita, joten se estää oletuksena kaik
 
 ```sh
 npm test
+# PostgreSQL-arkiston testit ajetaan, jos testitietokanta on annettu:
+TEST_DATABASE_URL=postgres://... npm test
 ```
 
 ## Rajoitukset

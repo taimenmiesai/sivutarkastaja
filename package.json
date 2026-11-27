@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "pg": "^8.23.1",
     "playwright": "1.63.0"
   },
   "license": "MIT"

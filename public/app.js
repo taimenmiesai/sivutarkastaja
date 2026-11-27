@@ -36,10 +36,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Tarkastus epäonnistui. Yritä uudelleen.');
-      // Jaettava linkki: ?url=... avaa saman tarkastuksen uudelleen.
-      const share = new URL(location.href);
-      share.searchParams.set('url', url);
-      history.replaceState(null, '', share);
+      setShareUrl(data, url);
       render(data);
     } catch (err) {
       showError(err.message === 'Failed to fetch' ? 'Palvelimeen ei saatu yhteyttä. Tarkista verkkoyhteys ja yritä uudelleen.' : err.message);
@@ -68,11 +65,134 @@
     });
   }
 
-  const initial = new URLSearchParams(location.search).get('url');
-  if (initial) {
-    input.value = initial;
-    runCheck(initial);
+  // Jaettava linkki: ?id=... avaa arkistoidun raportin sellaisenaan,
+  // ?url=... tekee uuden tarkastuksen.
+  function setShareUrl(data, url) {
+    const share = new URL(location.href);
+    share.hash = '';
+    share.searchParams.delete('url');
+    share.searchParams.delete('id');
+    if (data.id) share.searchParams.set('id', data.id);
+    else share.searchParams.set('url', url);
+    history.pushState(null, '', share);
   }
+
+  async function loadArchived(id) {
+    showView('check');
+    showError('');
+    statusEl.hidden = false;
+    statusEl.querySelector('span:last-child').textContent = 'Haetaan tarkastusta arkistosta.';
+    reportEl.hidden = true;
+    try {
+      const res = await fetch('/api/checks/' + encodeURIComponent(id));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Tarkastusta ei saatu haettua.');
+      input.value = data.url;
+      render(data);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      statusEl.hidden = true;
+      statusEl.querySelector('span:last-child').textContent = 'Haetaan ja tarkastetaan sivua. Tämä kestää yleensä 5–20 sekuntia.';
+    }
+  }
+
+  // --- Näkymät: tarkastus ja arkisto ---
+  const archiveEl = document.getElementById('archive');
+  const checkViewEl = document.getElementById('check-view');
+  function showView(name) {
+    const archive = name === 'archive';
+    archiveEl.hidden = !archive;
+    checkViewEl.hidden = archive;
+    document.getElementById('nav-archive').removeAttribute('aria-current');
+    document.getElementById('nav-check').removeAttribute('aria-current');
+    document.getElementById(archive ? 'nav-archive' : 'nav-check').setAttribute('aria-current', 'page');
+  }
+
+  function route() {
+    const params = new URLSearchParams(location.search);
+    if (location.hash === '#arkisto') {
+      showView('archive');
+      loadArchive(document.getElementById('archive-q').value);
+      document.getElementById('archive-title').setAttribute('tabindex', '-1');
+      document.getElementById('archive-title').focus();
+    } else if (params.get('id')) {
+      loadArchived(params.get('id'));
+    } else {
+      showView('check');
+      if (params.get('url')) {
+        input.value = params.get('url');
+        runCheck(params.get('url'));
+      }
+    }
+  }
+  window.addEventListener('popstate', route);
+  window.addEventListener('hashchange', route);
+  document.getElementById('nav-check').addEventListener('click', (e) => {
+    e.preventDefault();
+    history.pushState(null, '', location.pathname);
+    reportEl.hidden = true;
+    input.value = '';
+    showView('check');
+    input.focus();
+  });
+
+  const archiveStatus = document.getElementById('archive-status');
+  const archiveList = document.getElementById('archive-list');
+  document.getElementById('archive-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadArchive(document.getElementById('archive-q').value);
+  });
+
+  async function loadArchive(q = '') {
+    archiveStatus.textContent = 'Haetaan arkistoa.';
+    try {
+      const res = await fetch('/api/checks?q=' + encodeURIComponent(q.trim()));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Arkistoa ei saatu haettua.');
+      if (data.enabled === false) {
+        archiveStatus.textContent = '';
+        archiveList.innerHTML = '<p class="empty">Arkisto ei ole käytössä tällä palvelimella.</p>';
+        return;
+      }
+      archiveStatus.textContent = q.trim()
+        ? `Haulla ”${q.trim()}” löytyi ${data.sites.length} sivua.`
+        : `Arkistossa on ${data.sites.length} sivua.`;
+      archiveList.innerHTML = data.sites.length === 0
+        ? `<p class="empty">${q.trim() ? 'Hakuasi vastaavia tarkastuksia ei löytynyt. Kokeile lyhyempää hakusanaa.' : 'Arkisto on vielä tyhjä. Tarkasta ensimmäinen sivu, niin se tallentuu tänne.'}</p>`
+        : `<div class="table-wrap"><table>
+            <thead><tr><th scope="col">Sivu</th><th scope="col">Viimeisin arvosana</th><th scope="col">Tarkastuksia</th><th scope="col">Viimeksi tarkastettu</th></tr></thead>
+            <tbody>${data.sites.map(archiveRow).join('')}</tbody></table></div>`;
+    } catch (err) {
+      archiveStatus.textContent = '';
+      archiveList.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  }
+
+  function scoreBadge(score) {
+    if (score == null) return '–';
+    return badge(score >= 75 ? 'ok' : score >= 50 ? 'warn' : 'bad', `${score} / 100`);
+  }
+
+  function archiveRow(s) {
+    return `<tr>
+      <td><a href="?id=${encodeURIComponent(s.id)}" data-id="${esc(s.id)}" class="open-check"><strong>${esc(s.title || s.key)}</strong></a><br><span class="meta">${esc(s.key)}</span></td>
+      <td>${scoreBadge(s.summary.score)}</td>
+      <td>${s.count}</td>
+      <td>${esc(new Date(s.checkedAt).toLocaleString('fi-FI'))}</td>
+    </tr>`;
+  }
+
+  // Arkiston ja historian linkit avataan ilman sivun uudelleenlatausta.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a.open-check');
+    if (!a || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    history.pushState(null, '', '?id=' + encodeURIComponent(a.dataset.id));
+    loadArchived(a.dataset.id);
+  });
+
+  route();
 
   // --- Työkalupalkki ---
   const toolbarMsg = document.getElementById('toolbar-msg');
@@ -159,6 +279,8 @@
     }
     document.getElementById('summary-cards').innerHTML = cards.join('');
     renderScore(r.overall);
+    renderComparison(r.comparison);
+    renderHistory(r);
 
     renderContrast(c, r);
     renderColorBlind(r);
@@ -168,6 +290,67 @@
     reportEl.hidden = false;
     document.getElementById('summary-title').setAttribute('tabindex', '-1');
     document.getElementById('summary-title').focus();
+  }
+
+  function signed(n, digits = 0) {
+    if (n == null) return '–';
+    const v = Number(n.toFixed(digits));
+    if (v === 0) return '±0';
+    return (v > 0 ? '+' : '−') + fmt(Math.abs(v), digits);
+  }
+
+  // better: 'up' kun suurempi luku on parempi, 'down' kun pienempi on parempi.
+  function change(n, better, digits = 0) {
+    if (n == null || Number(n.toFixed(digits)) === 0) return `<span class="delta same">${signed(n, digits)}</span>`;
+    const good = better === 'up' ? n > 0 : n < 0;
+    return `<span class="delta ${good ? 'good' : 'worse'}">${signed(n, digits)}</span>`;
+  }
+
+  function renderComparison(cmp) {
+    const el = document.getElementById('comparison');
+    if (!cmp) {
+      el.innerHTML = '';
+      return;
+    }
+    const when = new Date(cmp.previousCheckedAt).toLocaleString('fi-FI');
+    const pairList = (list) => list.map((p) =>
+      `<li>${swatch(p.fg, p.bg)} <span class="hexes" style="display:inline">${esc(p.fg)} / ${esc(p.bg)}, ${fmt(p.ratio)}:1</span>${p.sample ? ` <span class="meta">”${esc(p.sample)}”</span>` : ''}</li>`).join('');
+    const verdict = cmp.score > 0 ? 'Sivu on parantunut.' : cmp.score < 0 ? 'Sivu on heikentynyt.' : 'Kokonaisarvosana ei muuttunut.';
+    el.innerHTML = `<section class="comparison" aria-labelledby="cmp-title">
+      <h3 id="cmp-title">Muutos edelliseen tarkastukseen</h3>
+      <p>${verdict} Vertailukohtana on <a href="?id=${encodeURIComponent(cmp.previousId)}" class="open-check" data-id="${esc(cmp.previousId)}">tarkastus ${esc(when)}</a>.</p>
+      <ul class="cmp-grid">
+        <li><span>Kokonaisarvosana</span>${change(cmp.score, 'up')}</li>
+        ${cmp.parts.map((p) => `<li><span>${esc(p.label)}</span>${change(p.delta, 'up')}</li>`).join('')}
+        <li><span>Kontrastiltaan heikkoja tekstejä</span>${change(cmp.failingElements, 'down')}</li>
+        <li><span>Värisokealle heikkeneviä väripareja</span>${change(cmp.colorBlindPairs, 'down')}</li>
+        <li><span>Vain värillä erottuvia linkkejä</span>${change(cmp.linkIssues, 'down')}</li>
+        <li><span>LIX-luku</span>${change(cmp.lix, 'down', 1)}</li>
+      </ul>
+      ${cmp.fixedPairs.length ? `<h4>Korjatut väriparit (${cmp.fixedPairs.length})</h4><ul class="pair-list">${pairList(cmp.fixedPairs)}</ul>` : ''}
+      ${cmp.newPairs.length ? `<h4>Uudet kontrastiongelmat (${cmp.newPairs.length})</h4><ul class="pair-list">${pairList(cmp.newPairs)}</ul>` : ''}
+    </section>`;
+  }
+
+  function renderHistory(r) {
+    const el = document.getElementById('site-history');
+    const list = r.history || [];
+    if (!r.archived || list.length < 2) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `<h2 id="history-title">Tämän sivun tarkastushistoria</h2>
+      <p>Sivu on tarkastettu ${list.length} kertaa. Uusin ensin.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">Tarkastettu</th><th scope="col">Arvosana</th><th scope="col">Heikkoja kontrasteja</th><th scope="col">LIX</th></tr></thead>
+        <tbody>${list.map((h) => `<tr${h.id === r.id ? ' class="is-current"' : ''}>
+          <td>${h.id === r.id ? `<strong>${esc(new Date(h.checkedAt).toLocaleString('fi-FI'))}</strong> <span class="meta">(tämä raportti)</span>` : `<a href="?id=${encodeURIComponent(h.id)}" class="open-check" data-id="${esc(h.id)}">${esc(new Date(h.checkedAt).toLocaleString('fi-FI'))}</a>`}</td>
+          <td>${scoreBadge(h.summary.score)}</td>
+          <td>${h.summary.failingElements}</td>
+          <td>${h.summary.lix == null ? '–' : fmt(h.summary.lix, 0)}</td>
+        </tr>`).join('')}</tbody></table></div>`;
   }
 
   function renderScore(o) {
