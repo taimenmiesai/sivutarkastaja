@@ -38,6 +38,7 @@ Ympäristömuuttujat:
 | `PORT` | `3000` | Kuunneltava portti |
 | `MAX_CONCURRENT` | `1` | Samanaikaisten tarkastusten enimmäismäärä |
 | `DATABASE_URL` | – | PostgreSQL-tietokanta tarkastusarkistolle |
+| `CHECK_PASSWORD` | – | Salasana, jolla tarkastukset ja arkisto suojataan. Jaetut raporttilinkit (`?id=`) aukeavat ilman salasanaa. Ilman muuttujaa sivusto on avoin. |
 | `DATA_DIR` | `./data` | Arkiston hakemisto, jos tietokantaa ei ole |
 | `ALLOW_PRIVATE_URLS` | – | `1` sallii localhost- ja sisäverkko-osoitteet. Vain kehitykseen (`npm run dev`). |
 

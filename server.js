@@ -6,6 +6,7 @@ const { analyzeUrl, closeBrowser } = require('./lib/analyze');
 const { parseUserUrl, UrlError } = require('./lib/urlguard');
 const { createStore } = require('./lib/store');
 const { compareReports, normalizeUrl } = require('./lib/compare');
+const { createAuth } = require('./lib/auth');
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1;
@@ -30,12 +31,18 @@ async function withArchive(store, entry) {
 
 function createApp(store = null, opts = {}) {
   const allowPrivate = opts.allowPrivate ?? ALLOW_PRIVATE;
+  // Salasana asetetaan Renderin ympäristömuuttujaksi CHECK_PASSWORD. Ilman sitä sivusto on avoin.
+  const auth = createAuth(opts.password ?? process.env.CHECK_PASSWORD);
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '10kb' }));
   app.get('/healthz', (req, res) => res.type('text').send('ok'));
   app.use(express.static(path.join(__dirname, 'public')));
+
+  app.get('/api/session', auth.session);
+  app.post('/api/login', auth.login);
+  app.post('/api/logout', auth.logout);
 
   let running = 0;
   const queue = [];
@@ -68,7 +75,7 @@ function createApp(store = null, opts = {}) {
     }
   }
 
-  app.post('/api/analyze', async (req, res) => {
+  app.post('/api/analyze', auth.requireAuth, async (req, res) => {
     let url;
     try {
       url = parseUserUrl(req.body && req.body.url);
@@ -103,7 +110,7 @@ function createApp(store = null, opts = {}) {
     }
   });
 
-  app.get('/api/checks', async (req, res) => {
+  app.get('/api/checks', auth.requireAuth, async (req, res) => {
     if (!store) return res.json({ sites: [], enabled: false });
     try {
       const q = String(req.query.q || '').slice(0, 200);
@@ -126,7 +133,7 @@ function createApp(store = null, opts = {}) {
     }
   });
 
-  app.get('/api/history', async (req, res) => {
+  app.get('/api/history', auth.requireAuth, async (req, res) => {
     if (!store) return res.json({ history: [] });
     try {
       res.json({ history: await store.history(normalizeUrl(parseUserUrl(req.query.url).href), 100) });

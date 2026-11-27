@@ -33,6 +33,7 @@
         <nav class="site-nav" aria-label="Päävalikko">
           <a href="./" id="nav-check" aria-current="page">Tarkasta sivu</a>
           <a href="#arkisto" id="nav-archive">Tarkastusarkisto</a>
+          <button type="button" id="logout" class="nav-button" hidden>Kirjaudu ulos</button>
         </nav>
       </div>
       <p class="lead">Tarkasta, ovatko verkkosivun värit riittävän kontrastisia, miltä sivu näyttää värisokealle ja kuinka helppoa sen tekstiä on lukea.</p>
@@ -40,6 +41,19 @@
   </header>
 
   <main id="main" class="wrap">
+    <section id="login" class="login" aria-labelledby="login-title" hidden>
+      <h2 id="login-title" tabindex="-1">Kirjaudu sisään</h2>
+      <p>Sivutarkastajan käyttö on suojattu salasanalla. Jaetut raporttilinkit aukeavat ilman salasanaa.</p>
+      <form id="login-form" class="check-form" novalidate>
+        <label for="password">Salasana</label>
+        <div class="row">
+          <input id="password" name="password" type="password" autocomplete="current-password" required aria-describedby="login-error">
+          <button type="submit" id="login-submit">Kirjaudu</button>
+        </div>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </form>
+    </section>
+
     <section id="archive" class="archive" aria-labelledby="archive-title" hidden>
       <h2 id="archive-title">Tarkastusarkisto</h2>
       <p>Täällä ovat kaikki tehdyt tarkastukset. Saman sivun tarkastukset kootaan yhteen, joten näet, miten sivu on kehittynyt.</p>
