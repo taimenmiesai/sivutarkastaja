@@ -22,7 +22,6 @@
 
   input.addEventListener('input', () => { if (!errorEl.hidden) showError(''); });
 
-  let lastReport = null;
 
   async function runCheck(url) {
     showError('');
@@ -37,11 +36,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Tarkastus epäonnistui. Yritä uudelleen.');
-      // Jaettava linkki: ?url=... avaa saman tarkastuksen uudelleen.
-      const share = new URL(location.href);
-      share.searchParams.set('url', url);
-      history.replaceState(null, '', share);
-      lastReport = data;
+      setShareUrl(data, url);
       render(data);
     } catch (err) {
       showError(err.message === 'Failed to fetch' ? 'Palvelimeen ei saatu yhteyttä. Tarkista verkkoyhteys ja yritä uudelleen.' : err.message);
@@ -70,11 +65,134 @@
     });
   }
 
-  const initial = new URLSearchParams(location.search).get('url');
-  if (initial) {
-    input.value = initial;
-    runCheck(initial);
+  // Jaettava linkki: ?id=... avaa arkistoidun raportin sellaisenaan,
+  // ?url=... tekee uuden tarkastuksen.
+  function setShareUrl(data, url) {
+    const share = new URL(location.href);
+    share.hash = '';
+    share.searchParams.delete('url');
+    share.searchParams.delete('id');
+    if (data.id) share.searchParams.set('id', data.id);
+    else share.searchParams.set('url', url);
+    history.pushState(null, '', share);
   }
+
+  async function loadArchived(id) {
+    showView('check');
+    showError('');
+    statusEl.hidden = false;
+    statusEl.querySelector('span:last-child').textContent = 'Haetaan tarkastusta arkistosta.';
+    reportEl.hidden = true;
+    try {
+      const res = await fetch('/api/checks/' + encodeURIComponent(id));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Tarkastusta ei saatu haettua.');
+      input.value = data.url;
+      render(data);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      statusEl.hidden = true;
+      statusEl.querySelector('span:last-child').textContent = 'Haetaan ja tarkastetaan sivua. Tämä kestää yleensä 5–20 sekuntia.';
+    }
+  }
+
+  // --- Näkymät: tarkastus ja arkisto ---
+  const archiveEl = document.getElementById('archive');
+  const checkViewEl = document.getElementById('check-view');
+  function showView(name) {
+    const archive = name === 'archive';
+    archiveEl.hidden = !archive;
+    checkViewEl.hidden = archive;
+    document.getElementById('nav-archive').removeAttribute('aria-current');
+    document.getElementById('nav-check').removeAttribute('aria-current');
+    document.getElementById(archive ? 'nav-archive' : 'nav-check').setAttribute('aria-current', 'page');
+  }
+
+  function route() {
+    const params = new URLSearchParams(location.search);
+    if (location.hash === '#arkisto') {
+      showView('archive');
+      loadArchive(document.getElementById('archive-q').value);
+      document.getElementById('archive-title').setAttribute('tabindex', '-1');
+      document.getElementById('archive-title').focus();
+    } else if (params.get('id')) {
+      loadArchived(params.get('id'));
+    } else {
+      showView('check');
+      if (params.get('url')) {
+        input.value = params.get('url');
+        runCheck(params.get('url'));
+      }
+    }
+  }
+  window.addEventListener('popstate', route);
+  window.addEventListener('hashchange', route);
+  document.getElementById('nav-check').addEventListener('click', (e) => {
+    e.preventDefault();
+    history.pushState(null, '', location.pathname);
+    reportEl.hidden = true;
+    input.value = '';
+    showView('check');
+    input.focus();
+  });
+
+  const archiveStatus = document.getElementById('archive-status');
+  const archiveList = document.getElementById('archive-list');
+  document.getElementById('archive-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadArchive(document.getElementById('archive-q').value);
+  });
+
+  async function loadArchive(q = '') {
+    archiveStatus.textContent = 'Haetaan arkistoa.';
+    try {
+      const res = await fetch('/api/checks?q=' + encodeURIComponent(q.trim()));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Arkistoa ei saatu haettua.');
+      if (data.enabled === false) {
+        archiveStatus.textContent = '';
+        archiveList.innerHTML = '<p class="empty">Arkisto ei ole käytössä tällä palvelimella.</p>';
+        return;
+      }
+      archiveStatus.textContent = q.trim()
+        ? `Haulla ”${q.trim()}” löytyi ${data.sites.length} sivua.`
+        : `Arkistossa on ${data.sites.length} sivua.`;
+      archiveList.innerHTML = data.sites.length === 0
+        ? `<p class="empty">${q.trim() ? 'Hakuasi vastaavia tarkastuksia ei löytynyt. Kokeile lyhyempää hakusanaa.' : 'Arkisto on vielä tyhjä. Tarkasta ensimmäinen sivu, niin se tallentuu tänne.'}</p>`
+        : `<div class="table-wrap"><table>
+            <thead><tr><th scope="col">Sivu</th><th scope="col">Viimeisin arvosana</th><th scope="col">Tarkastuksia</th><th scope="col">Viimeksi tarkastettu</th></tr></thead>
+            <tbody>${data.sites.map(archiveRow).join('')}</tbody></table></div>`;
+    } catch (err) {
+      archiveStatus.textContent = '';
+      archiveList.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  }
+
+  function scoreBadge(score) {
+    if (score == null) return '–';
+    return badge(score >= 75 ? 'ok' : score >= 50 ? 'warn' : 'bad', `${score} / 100`);
+  }
+
+  function archiveRow(s) {
+    return `<tr>
+      <td><a href="?id=${encodeURIComponent(s.id)}" data-id="${esc(s.id)}" class="open-check"><strong>${esc(s.title || s.key)}</strong></a><br><span class="meta">${esc(s.key)}</span></td>
+      <td>${scoreBadge(s.summary.score)}</td>
+      <td>${s.count}</td>
+      <td>${esc(new Date(s.checkedAt).toLocaleString('fi-FI'))}</td>
+    </tr>`;
+  }
+
+  // Arkiston ja historian linkit avataan ilman sivun uudelleenlatausta.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a.open-check');
+    if (!a || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    history.pushState(null, '', '?id=' + encodeURIComponent(a.dataset.id));
+    loadArchived(a.dataset.id);
+  });
+
+  route();
 
   // --- Työkalupalkki ---
   const toolbarMsg = document.getElementById('toolbar-msg');
@@ -86,25 +204,12 @@
   document.getElementById('copy-link').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(location.href);
-      flash('Linkki kopioitu.');
+      flash('Linkki kopioitu. Liitä se viestiin, niin vastaanottaja näkee saman raportin.');
     } catch {
       flash('Kopioi linkki selaimen osoiteriviltä.');
     }
   });
   document.getElementById('print-report').addEventListener('click', () => window.print());
-  document.getElementById('download-json').addEventListener('click', () => {
-    if (!lastReport) return;
-    const { screenshot, ...data } = lastReport;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    const host = (() => { try { return new URL(data.url).hostname; } catch { return 'sivu'; } })();
-    a.href = URL.createObjectURL(blob);
-    a.download = `saavutettavuus-${host}-${data.checkedAt.slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
 
   // --- Välilehdet (nuolinäppäintuki) ---
   const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -127,6 +232,17 @@
       if (next) { e.preventDefault(); selectTab(next); next.focus(); }
     });
   });
+
+  // Lisätietoa-osio: mitä havaittiin, miksi se kannattaa korjata ja mihin ohjeeseen se perustuu.
+  function more(found, why, ref) {
+    return `<details class="more"><summary>Lisätietoa ja perustelut</summary>
+      <p><strong>Mitä havaittiin:</strong> ${found}</p>
+      <p><strong>Miksi tämä kannattaa korjata:</strong> ${why}</p>
+      ${ref ? `<p class="ref">Perustuu: ${ref}</p>` : ''}
+    </details>`;
+  }
+
+  const LAW = 'Laki digitaalisten palvelujen tarjoamisesta ja EU:n esteettömyyssäädös edellyttävät monilta palveluilta WCAG AA -tason täyttämistä.';
 
   function badge(kind, text) {
     return `<span class="badge ${kind}">${esc(text)}</span>`;
@@ -163,6 +279,8 @@
     }
     document.getElementById('summary-cards').innerHTML = cards.join('');
     renderScore(r.overall);
+    renderComparison(r.comparison);
+    renderHistory(r);
 
     renderContrast(c, r);
     renderColorBlind(r);
@@ -172,6 +290,67 @@
     reportEl.hidden = false;
     document.getElementById('summary-title').setAttribute('tabindex', '-1');
     document.getElementById('summary-title').focus();
+  }
+
+  function signed(n, digits = 0) {
+    if (n == null) return '–';
+    const v = Number(n.toFixed(digits));
+    if (v === 0) return '±0';
+    return (v > 0 ? '+' : '−') + fmt(Math.abs(v), digits);
+  }
+
+  // better: 'up' kun suurempi luku on parempi, 'down' kun pienempi on parempi.
+  function change(n, better, digits = 0) {
+    if (n == null || Number(n.toFixed(digits)) === 0) return `<span class="delta same">${signed(n, digits)}</span>`;
+    const good = better === 'up' ? n > 0 : n < 0;
+    return `<span class="delta ${good ? 'good' : 'worse'}">${signed(n, digits)}</span>`;
+  }
+
+  function renderComparison(cmp) {
+    const el = document.getElementById('comparison');
+    if (!cmp) {
+      el.innerHTML = '';
+      return;
+    }
+    const when = new Date(cmp.previousCheckedAt).toLocaleString('fi-FI');
+    const pairList = (list) => list.map((p) =>
+      `<li>${swatch(p.fg, p.bg)} <span class="hexes" style="display:inline">${esc(p.fg)} / ${esc(p.bg)}, ${fmt(p.ratio)}:1</span>${p.sample ? ` <span class="meta">”${esc(p.sample)}”</span>` : ''}</li>`).join('');
+    const verdict = cmp.score > 0 ? 'Sivu on parantunut.' : cmp.score < 0 ? 'Sivu on heikentynyt.' : 'Kokonaisarvosana ei muuttunut.';
+    el.innerHTML = `<section class="comparison" aria-labelledby="cmp-title">
+      <h3 id="cmp-title">Muutos edelliseen tarkastukseen</h3>
+      <p>${verdict} Vertailukohtana on <a href="?id=${encodeURIComponent(cmp.previousId)}" class="open-check" data-id="${esc(cmp.previousId)}">tarkastus ${esc(when)}</a>.</p>
+      <ul class="cmp-grid">
+        <li><span>Kokonaisarvosana</span>${change(cmp.score, 'up')}</li>
+        ${cmp.parts.map((p) => `<li><span>${esc(p.label)}</span>${change(p.delta, 'up')}</li>`).join('')}
+        <li><span>Kontrastiltaan heikkoja tekstejä</span>${change(cmp.failingElements, 'down')}</li>
+        <li><span>Värisokealle heikkeneviä väripareja</span>${change(cmp.colorBlindPairs, 'down')}</li>
+        <li><span>Vain värillä erottuvia linkkejä</span>${change(cmp.linkIssues, 'down')}</li>
+        <li><span>LIX-luku</span>${change(cmp.lix, 'down', 1)}</li>
+      </ul>
+      ${cmp.fixedPairs.length ? `<h4>Korjatut väriparit (${cmp.fixedPairs.length})</h4><ul class="pair-list">${pairList(cmp.fixedPairs)}</ul>` : ''}
+      ${cmp.newPairs.length ? `<h4>Uudet kontrastiongelmat (${cmp.newPairs.length})</h4><ul class="pair-list">${pairList(cmp.newPairs)}</ul>` : ''}
+    </section>`;
+  }
+
+  function renderHistory(r) {
+    const el = document.getElementById('site-history');
+    const list = r.history || [];
+    if (!r.archived || list.length < 2) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `<h2 id="history-title">Tämän sivun tarkastushistoria</h2>
+      <p>Sivu on tarkastettu ${list.length} kertaa. Uusin ensin.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">Tarkastettu</th><th scope="col">Arvosana</th><th scope="col">Heikkoja kontrasteja</th><th scope="col">LIX</th></tr></thead>
+        <tbody>${list.map((h) => `<tr${h.id === r.id ? ' class="is-current"' : ''}>
+          <td>${h.id === r.id ? `<strong>${esc(new Date(h.checkedAt).toLocaleString('fi-FI'))}</strong> <span class="meta">(tämä raportti)</span>` : `<a href="?id=${encodeURIComponent(h.id)}" class="open-check" data-id="${esc(h.id)}">${esc(new Date(h.checkedAt).toLocaleString('fi-FI'))}</a>`}</td>
+          <td>${scoreBadge(h.summary.score)}</td>
+          <td>${h.summary.failingElements}</td>
+          <td>${h.summary.lix == null ? '–' : fmt(h.summary.lix, 0)}</td>
+        </tr>`).join('')}</tbody></table></div>`;
   }
 
   function renderScore(o) {
@@ -239,7 +418,16 @@
       <td>${level}${p.bgImage ? '<br><span class="meta">Taustakuva, tarkista käsin</span>' : ''}</td>
       <td>${p.count}</td>
       <td>${s ? `<span class="sample-text">”${esc(s.text)}”</span><code>${esc(s.selector)}</code>` : ''}</td>
-    </tr>`;
+    </tr>${p.passAA ? '' : `<tr class="detail-row"><td colspan="5">${contrastMore(p)}</td></tr>`}`;
+  }
+
+  function contrastMore(p) {
+    const kind = p.large ? 'suurelle tekstille' : 'tavalliselle tekstille';
+    const found = `Teksti värillä ${esc(p.fg)} taustalla ${esc(p.bg)} on kontrastiltaan ${fmt(p.ratio)}:1. Vaatimus ${kind} on vähintään ${fmt(p.required, 1)}:1, joten ero jää ${fmt(p.required - p.ratio)} yksikköä alle rajan. Sama väripari esiintyy sivulla ${p.count === 1 ? 'kerran' : p.count + ' kertaa'}.`
+      + (p.bgImage ? ' Tekstin takana on taustakuva tai liukuväri, joten todellinen kontrasti voi olla erilainen. Tarkista kohta myös silmämääräisesti.' : '')
+      + (p.suggestion ? ` Jos tekstiväriksi vaihdetaan ${esc(p.suggestion)}, kontrasti nousee tasolle ${fmt(p.suggestionRatio)}:1.` : ' Pelkkä tekstivärin vaihtaminen ei riitä, vaan myös taustaväriä on muutettava.');
+    const why = 'Kun tekstin ja taustan välillä on liian vähän eroa, heikkonäköisten, ikääntyneiden ja värisokeiden on vaikea tai mahdoton lukea tekstiä. Sama koskee kaikkia, jotka lukevat sivua puhelimella kirkkaassa auringonvalossa tai heikkolaatuisella näytöllä. Riittävä kontrasti on yksi helpoimmista ja halvimmista saavutettavuuskorjauksista. ' + LAW;
+    return more(found, why, 'WCAG 2.2, kohta 1.4.3 Kontrasti (minimi), taso AA');
   }
 
   // Kuvakaappaus, johon AA-tason alittavat tekstit on merkitty numeroin.
@@ -298,7 +486,7 @@
             <td>${badge('bad', `${fmt(a.simRatio)}:1`)}<br><span class="meta">vaatimus ${fmt(a.required, 1)}:1</span></td>
             <td>${a.count}</td>
             <td><span class="sample-text">${a.sample ? '”' + esc(a.sample) + '”' : ''}</span></td>
-          </tr>`).join('')}</tbody></table></div>`;
+          </tr><tr class="detail-row"><td colspan="5">${colorBlindMore(key, label, a)}</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
 
     const linkSection = r.links.length === 0 ? '' : `
@@ -310,7 +498,11 @@
           <td><span class="sample-text">”${esc(l.text)}”</span></td>
           <td><span class="dot" style="background:${esc(l.linkColor)}"></span><span class="hexes" style="display:inline">linkki ${esc(l.linkColor)}</span><br><span class="dot" style="background:${esc(l.textColor)}"></span><span class="hexes" style="display:inline">teksti ${esc(l.textColor)}</span><br>${badge('warn', `${fmt(l.ratio)}:1`)}</td>
           <td><code>${esc(l.selector)}</code></td>
-        </tr>`).join('')}</tbody></table></div>`;
+        </tr><tr class="detail-row"><td colspan="3">${more(
+          `Linkki ”${esc(l.text)}” on tekstin keskellä ilman alleviivausta, ja sen väri ${esc(l.linkColor)} eroaa ympäröivän tekstin väristä ${esc(l.textColor)} vain ${fmt(l.ratio)}:1. Ero on alle vaadittavan 3:1, eikä linkkiä erota muulla tavalla, kuten lihavoinnilla.`,
+          'Jos linkin tunnistaa vain väristä, värisokea, heikkonäköinen tai harmaasävynäyttöä käyttävä ei huomaa linkkiä lainkaan ja jää paitsi sen takana olevasta tiedosta. Helpoin korjaus on näyttää linkkien alleviivaus tekstin sisällä. ' + LAW,
+          'WCAG 2.2, kohta 1.4.1 Värien käyttö, taso A (tekniikka G183)'
+        )}</td></tr>`).join('')}</tbody></table></div>`;
 
     panel.innerHTML = `
       <h2>Miltä sivu näyttää värisokealle</h2>
@@ -318,6 +510,19 @@
       <div class="sim-grid">${figures}</div>
       ${lists || '<p class="empty" style="margin-top:20px">Yksikään väripari ei heikkene simulaatioissa vaatimuksen alle.</p>'}
       ${linkSection}`;
+  }
+
+  const CB_WHO = {
+    protanopia: 'Punasokeutta tai sen lievempää muotoa on noin 1 prosentilla miehistä. Puna-vihervärisokeutta on kaikkiaan noin 8 prosentilla miehistä ja 0,5 prosentilla naisista.',
+    deuteranopia: 'Vihersokeus ja sen lievemmät muodot ovat yleisin värinäön poikkeama. Puna-vihervärisokeutta on noin 8 prosentilla miehistä ja 0,5 prosentilla naisista.',
+    tritanopia: 'Sinisokeus on harvinainen, mutta sinisen ja keltaisen erottaminen heikkenee myös iän ja esimerkiksi harmaakaihin myötä.',
+    achromatopsia: 'Täysi värisokeus on harvinainen, mutta sama tilanne syntyy, kun sivu tulostetaan mustavalkoisena tai luetaan harmaasävyisellä näytöllä.',
+  };
+
+  function colorBlindMore(key, label, a) {
+    const found = `Värit ${esc(a.fg)} ja ${esc(a.bg)} erottuvat tavallisella näöllä riittävästi (${fmt(a.ratio)}:1). Kun värinäköä simuloidaan tyypillä ${esc(label.toLowerCase())}, värit näyttävät sävyiltä ${esc(a.simFg)} ja ${esc(a.simBg)}, ja kontrasti putoaa tasolle ${fmt(a.simRatio)}:1. Vaatimus on ${fmt(a.required, 1)}:1.`;
+    const why = `${CB_WHO[key] || ''} Näille lukijoille teksti sulautuu taustaan, vaikka se näyttää muille selvältä. Korjaa valitsemalla värit, joiden ero perustuu vaaleuteen eikä pelkkään sävyyn, esimerkiksi tumma teksti vaalealla taustalla.`;
+    return more(found, why, 'WCAG 2.2, kohdat 1.4.1 Värien käyttö ja 1.4.3 Kontrasti (minimi)');
   }
 
   // --- Selkolukuisuus ---
@@ -346,7 +551,7 @@
         LIX-luku lasketaan lauseiden keskipituudesta ja pitkien sanojen osuudesta. Alle 40 on helppoa, yli 50 vaikeaa luettavaa.</p>
       ${rd.note ? `<p class="meta">${esc(rd.note)}</p>` : ''}
       <div class="metrics">${metrics.join('')}</div>
-      ${rd.advice.length ? `<h3>Parannusehdotukset</h3><ul class="advice">${rd.advice.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '<h3>Parannusehdotukset</h3><p>Teksti on selkeää. Ei erityisiä huomioita.</p>'}
+      ${rd.advice.length ? `<h3>Parannusehdotukset</h3><ul class="advice">${rd.advice.map((a) => `<li>${esc(a.text)}${more(esc(a.found), esc(a.why), a.ref ? esc(a.ref) : '')}</li>`).join('')}</ul>` : '<h3>Parannusehdotukset</h3><p>Teksti on selkeää. Ei erityisiä huomioita.</p>'}
       ${rd.longestSentences.length ? `<h3>Pisimmät lauseet</h3><ol class="sentences">${rd.longestSentences.map((s) => `<li><strong>${s.words} sanaa:</strong> ${esc(s.text)}</li>`).join('')}</ol>` : ''}
       ${rd.veryLongWords.length ? `<h3>Hyvin pitkät sanat (vähintään ${rd.veryLongWordLimit} merkkiä)</h3><ul class="words">${rd.veryLongWords.map((w) => `<li>${esc(w.word)}${w.count > 1 ? ` (${w.count})` : ''}</li>`).join('')}</ul>` : ''}`;
   }

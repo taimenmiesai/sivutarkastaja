@@ -29,6 +29,7 @@ test('pitkä ja raskas teksti saa neuvoja', () => {
   assert.equal(r.longestSentences.length, 1);
   assert.ok(r.veryLongWords.length >= 2);
   assert.ok(r.advice.length >= 2);
+  for (const a of r.advice) assert.ok(a.text && a.found && a.why, 'neuvossa on havainto ja perustelu');
 });
 
 test('englannille lasketaan Flesch', () => {
