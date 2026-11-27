@@ -8,7 +8,7 @@ const { createStore } = require('./lib/store');
 const { compareReports, normalizeUrl } = require('./lib/compare');
 
 const PORT = Number(process.env.PORT) || 3000;
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 2;
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1;
 // Kun tarkastuksia on jo käynnissä, uusi pyyntö odottaa vuoroaan jonossa.
 const MAX_QUEUE = Number(process.env.MAX_QUEUE) || 6;
 const QUEUE_WAIT_MS = 90_000;

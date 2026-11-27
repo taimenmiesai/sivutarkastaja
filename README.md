@@ -36,7 +36,7 @@ Ympäristömuuttujat:
 | Muuttuja | Oletus | Merkitys |
 |---|---|---|
 | `PORT` | `3000` | Kuunneltava portti |
-| `MAX_CONCURRENT` | `2` | Samanaikaisten tarkastusten enimmäismäärä |
+| `MAX_CONCURRENT` | `1` | Samanaikaisten tarkastusten enimmäismäärä |
 | `DATABASE_URL` | – | PostgreSQL-tietokanta tarkastusarkistolle |
 | `DATA_DIR` | `./data` | Arkiston hakemisto, jos tietokantaa ei ole |
 | `ALLOW_PRIVATE_URLS` | – | `1` sallii localhost- ja sisäverkko-osoitteet. Vain kehitykseen (`npm run dev`). |
