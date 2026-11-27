@@ -66,3 +66,35 @@ test('rinnakkaiset tarkastukset odottavat jonossa eivätkä saa kiireinen-virhet
   const statuses = await Promise.all([call(), call(), call(), call()]);
   assert.deepEqual(statuses, [200, 200, 200, 200]);
 });
+
+test('JavaScriptillä myöhään rakentuva sivu tarkastetaan valmiina', async (t) => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><html><head><title></title></head><body><div id="app"></div><script>
+      setTimeout(() => {
+        document.title = 'Myöhäinen';
+        document.documentElement.lang = 'fi';
+        document.getElementById('app').innerHTML = '<h1>Otsikko</h1><p>Tämä teksti ilmestyy sivulle vasta hetken kuluttua, kun sovellus on käynnistynyt selaimessa.</p>';
+      }, 1500);
+    </script></body></html>`);
+  });
+  const port = await listen(server);
+  t.after(async () => { server.close(); await closeBrowser(); });
+  const r = await analyzeUrl(`http://127.0.0.1:${port}/`, { allowPrivate: true });
+  assert.equal(r.title, 'Myöhäinen');
+  assert.ok(r.contrast.totalElements > 0);
+});
+
+test('tyhjästä sivusta ei anneta arvosanaa', async (t) => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><html><body><div id="app"></div></body></html>');
+  });
+  const port = await listen(server);
+  t.after(async () => { server.close(); await closeBrowser(); });
+  await assert.rejects(analyzeUrl(`http://127.0.0.1:${port}/`, { allowPrivate: true }), (err) => {
+    assert.ok(err.userFacing);
+    assert.match(err.message, /näkyvää tekstiä/);
+    return true;
+  });
+});
